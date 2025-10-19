@@ -1,7 +1,7 @@
 FROM node:18-alpine AS builder
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci --only=production
+RUN npm ci
 COPY . .
 RUN npm run build
 
@@ -15,7 +15,7 @@ RUN addgroup -g 1001 -S nodejs && \
 USER bluetify
 
 COPY --chown=bluetify:nodejs package*.json ./
-RUN npm ci --only=production && npm cache clean --force
+RUN npm ci && npm cache clean --force
 COPY --chown=bluetify:nodejs --from=builder /app/dist ./dist
 
 CMD ["node", "dist/index.js"]
