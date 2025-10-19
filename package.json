@@ -1,0 +1,29 @@
+{
+  "name": "bluetify",
+  "version": "1.0.0",
+  "description": "Spotify integration for Bluesky bio",
+  "main": "dist/index.js",
+  "author": "unicodick",
+  "license": "MIT",
+  "homepage": "https://github.com/unicodick/bluetify#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/unicodick/bluetify.git"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "ts-node src/index.ts"
+  },
+  "dependencies": {
+    "@atproto/api": "^0.17.3",
+    "dotenv": "^17.2.3",
+    "spotify-web-api-node": "^5.0.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.8.1",
+    "@types/spotify-web-api-node": "^5.0.11",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
