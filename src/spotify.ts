@@ -1,22 +1,16 @@
 import SpotifyWebApi from 'spotify-web-api-node';
 import { config } from './config';
+import { MusicService, Track } from './musicService';
 
-export interface CurrentTrack {
-  name: string;
-  artist: string;
-  album: string;
-  isPlaying: boolean;
-}
-
-export class SpotifyService {
+export class SpotifyService implements MusicService {
   private spotifyApi: SpotifyWebApi;
   private lastTrackId: string | null = null;
 
   constructor() {
     this.spotifyApi = new SpotifyWebApi({
-      clientId: config.spotify.clientId,
-      clientSecret: config.spotify.clientSecret,
-      refreshToken: config.spotify.refreshToken,
+      clientId: config.spotify!.clientId,
+      clientSecret: config.spotify!.clientSecret,
+      refreshToken: config.spotify!.refreshToken,
     });
   }
 
@@ -29,7 +23,7 @@ export class SpotifyService {
     }
   }
 
-  async getCurrentTrack(): Promise<CurrentTrack | null> {
+  async getCurrentTrack(): Promise<Track | null> {
     try {
       const data = await this.spotifyApi.getMyCurrentPlayingTrack();
 
@@ -58,14 +52,14 @@ export class SpotifyService {
     }
   }
 
-  hasTrackChanged(currentTrack: CurrentTrack | null): boolean {
+  hasTrackChanged(currentTrack: Track | null): boolean {
     const trackId = currentTrack ? `${currentTrack.name}|${currentTrack.artist}` : null;
     const changed = this.lastTrackId !== trackId;
     this.lastTrackId = trackId;
     return changed;
   }
 
-  formatTrackForBio(track: CurrentTrack): string {
+  formatTrackForBio(track: Track): string {
     return `Now playing: ${track.name} by ${track.artist}`;
   }
 }

@@ -1,7 +1,7 @@
 <div align="center">
 
 # Bluetify
-Spotify integration for Bluesky bio
+Music (spotify & last.fm) integration for Bluesky bio
 
 </div>
 
@@ -28,7 +28,13 @@ cd bluetify
 - Required scope: `user-read-currently-playing`
 - Copy the generated refresh token
 
-**4. Configure Environment**
+**4. Set up Last.fm**
+
+- Navigate to [Last.fm API](https://www.last.fm/api/account/create)
+- Create an API account and get your API key
+- Note your Last.fm username
+
+**5. Configure Environment**
 
 ```bash
 cp .env.example .env
@@ -36,7 +42,7 @@ cp .env.example .env
 
 Edit `.env` with your credentials or configure `docker-compose.yml` directly.
 
-**5. Run Application**
+**6. Run Application**
 
 ```bash
 npm ci && npm run build

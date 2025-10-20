@@ -1,24 +1,32 @@
 import { SpotifyService } from './spotify';
 import { BlueskyService } from './bluesky';
+import { LastFmService } from './lastfm';
+import { MusicService } from './musicService';
 import { config } from './config';
 
 class Bluetify {
-  private spotifyService: SpotifyService;
+  private musicService!: MusicService;
   private blueskyService: BlueskyService;
   private intervalId: NodeJS.Timeout | null = null;
   private originalBio: string = '';
 
   constructor() {
-    this.spotifyService = new SpotifyService();
     this.blueskyService = new BlueskyService();
+
+    const services = {
+      spotify: SpotifyService,
+      lastfm: LastFmService,
+    };
+
+    this.musicService = new services[config.musicService]();
   }
 
   async initialize(): Promise<void> {
     try {
-      await this.spotifyService.initialize();
+      await this.musicService.initialize();
       await this.blueskyService.initialize();
       this.originalBio = await this.blueskyService.getCurrentDescription();
-      console.log('bluetify init ~ github.com/unicodick/bluetify');
+      console.log(`bluetify init with ${config.musicService}`);
     } catch (error) {
       console.error('failed to init:', error);
       throw error;
@@ -27,19 +35,21 @@ class Bluetify {
 
   async checkAndUpdateTrack(): Promise<void> {
     try {
-      const currentTrack = await this.spotifyService.getCurrentTrack();
+      const currentTrack = await this.musicService.getCurrentTrack();
 
       if (!currentTrack) {
-        if (this.spotifyService.hasTrackChanged(null)) {
+        if (this.musicService.hasTrackChanged(null)) {
           await this.blueskyService.restoreOriginalBio(this.originalBio);
         }
         return;
       }
 
-      if (this.spotifyService.hasTrackChanged(currentTrack)) {
-        const bioText = this.spotifyService.formatTrackForBio(currentTrack);
-        console.log(`${currentTrack.name} - ${currentTrack.artist}`);
+      const trackChanged = this.musicService.hasTrackChanged(currentTrack);
+
+      if (trackChanged) {
+        const bioText = this.musicService.formatTrackForBio(currentTrack);
         await this.blueskyService.updateProfile(bioText);
+        console.log(`Now playing: ${currentTrack.name} - ${currentTrack.artist}`);
       }
     } catch (error) {
       console.error('track check error:', error);
@@ -64,6 +74,7 @@ class Bluetify {
       console.log('shutdown complete');
     } catch (error) {
       console.error('shutdown error:', error);
+      throw error;
     }
   }
 }

@@ -45,7 +45,7 @@ export class BlueskyService {
     try {
       await this.updateProfile(originalBio);
     } catch (error) {
-      console.error('failed to restore original bio:', error);
+      throw new Error(`failed to restore original bio: ${error}`);
     }
   }
 }
