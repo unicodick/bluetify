@@ -3,12 +3,14 @@ import { BlueskyService } from './bluesky';
 import { LastFmService } from './lastfm';
 import { MusicService } from './musicService';
 import { config } from './config';
+import { ErrorMessages, LogMessages } from './constants';
 
 class Bluetify {
-  private musicService!: MusicService;
+  private musicService: MusicService;
   private blueskyService: BlueskyService;
   private intervalId: NodeJS.Timeout | null = null;
   private originalBio: string = '';
+  private isShuttingDown: boolean = false;
 
   constructor() {
     this.blueskyService = new BlueskyService();
@@ -18,7 +20,8 @@ class Bluetify {
       lastfm: LastFmService,
     };
 
-    this.musicService = new services[config.musicService]();
+    const ServiceClass = services[config.musicService];
+    this.musicService = new ServiceClass();
   }
 
   async initialize(): Promise<void> {
@@ -26,14 +29,18 @@ class Bluetify {
       await this.musicService.initialize();
       await this.blueskyService.initialize();
       this.originalBio = await this.blueskyService.getCurrentDescription();
-      console.log(`bluetify init with ${config.musicService}`);
+      console.log(LogMessages.INIT_SUCCESS(config.musicService));
     } catch (error) {
-      console.error('failed to init:', error);
+      console.error(`${ErrorMessages.INIT_FAILED}:`, error);
       throw error;
     }
   }
 
   async checkAndUpdateTrack(): Promise<void> {
+    if (this.isShuttingDown) {
+      return;
+    }
+
     try {
       const currentTrack = await this.musicService.getCurrentTrack();
 
@@ -49,21 +56,23 @@ class Bluetify {
       if (trackChanged) {
         const bioText = this.musicService.formatTrackForBio(currentTrack);
         await this.blueskyService.updateProfile(bioText);
-        console.log(`Now playing: ${currentTrack.name} - ${currentTrack.artist}`);
+        console.log(LogMessages.NOW_PLAYING(currentTrack.name, currentTrack.artist));
       }
     } catch (error) {
-      console.error('track check error:', error);
+      console.error(`${ErrorMessages.TRACK_CHECK_FAILED}:`, error);
     }
   }
 
-  start(): void {
-    this.checkAndUpdateTrack();
+  async start(): Promise<void> {
+    await this.checkAndUpdateTrack();
     this.intervalId = setInterval(() => {
-      this.checkAndUpdateTrack();
+      void this.checkAndUpdateTrack();
     }, config.updateInterval);
   }
 
   async shutdown(): Promise<void> {
+    this.isShuttingDown = true;
+
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
@@ -71,35 +80,40 @@ class Bluetify {
 
     try {
       await this.blueskyService.restoreOriginalBio(this.originalBio);
-      console.log('shutdown complete');
+      console.log(LogMessages.SHUTDOWN_COMPLETE);
     } catch (error) {
-      console.error('shutdown error:', error);
+      console.error(`${ErrorMessages.SHUTDOWN_FAILED}:`, error);
       throw error;
     }
   }
 }
 
-async function main() {
+async function main(): Promise<void> {
   const bluetify = new Bluetify();
 
-  const gracefulShutdown = async () => {
-    await bluetify.shutdown();
-    process.exit(0);
+  const gracefulShutdown = async (signal: string): Promise<void> => {
+    try {
+      await bluetify.shutdown();
+      process.exit(0);
+    } catch (error) {
+      console.error('Error during shutdown:', error);
+      process.exit(1);
+    }
   };
 
-  process.on('SIGINT', gracefulShutdown);
-  process.on('SIGTERM', gracefulShutdown);
+  process.on('SIGINT', () => void gracefulShutdown('SIGINT'));
+  process.on('SIGTERM', () => void gracefulShutdown('SIGTERM'));
 
   try {
     await bluetify.initialize();
-    bluetify.start();
+    await bluetify.start();
   } catch (error) {
-    console.error('failed to start:', error);
+    console.error('Failed to start Bluetify:', error);
     process.exit(1);
   }
 }
 
 main().catch((error) => {
-  console.error('unhandled error:', error);
+  console.error('Unhandled error:', error);
   process.exit(1);
 });
