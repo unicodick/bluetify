@@ -1,12 +1,14 @@
 import { LastFm } from '@imikailoby/lastfm-ts';
 import { config } from './config';
-import { MusicService, Track } from './musicService';
+import { Track } from './musicService';
+import { BaseMusicService } from './baseMusicService';
+import { ErrorMessages } from './constants';
 
-export class LastFmService implements MusicService {
+export class LastFmService extends BaseMusicService {
   private lastFm: LastFm;
-  private lastTrackId: string | null = null;
 
   constructor() {
+    super();
     this.lastFm = new LastFm(config.lastfm!.apiKey);
   }
 
@@ -14,10 +16,9 @@ export class LastFmService implements MusicService {
     try {
       await this.lastFm.user.getInfo({ user: config.lastfm!.username });
     } catch (error) {
-      throw new Error(`lastfm auth failed: ${error}`);
+      throw new Error(`${ErrorMessages.AUTH_FAILED} (Last.fm): ${error}`);
     }
   }
-
 
   async getCurrentTrack(): Promise<Track | null> {
     try {
@@ -34,25 +35,22 @@ export class LastFmService implements MusicService {
       const track = response.recenttracks.track[0] as any;
       const isNowPlaying = track['@attr']?.nowplaying === 'true';
 
+      if (!isNowPlaying) {
+        return null;
+      }
+
+      const artistName = track.artist?.name || track.artist?.['#text'] || 'Unknown Artist';
+      const albumName = track.album?.['#text'] || 'Unknown Album';
+      const trackName = track.name || 'Unknown Track';
+
       return {
-        name: track.name || 'Unknown Track',
-        artist: track.artist?.name || track.artist?.['#text'] || 'Unknown Artist',
-        album: track.album?.['#text'] || 'Unknown Album',
-        isPlaying: isNowPlaying,
+        name: trackName,
+        artist: artistName,
+        album: albumName,
+        isPlaying: true,
       };
     } catch (error) {
-      throw error;
+      throw new Error(`Failed to fetch Last.fm track: ${error}`);
     }
-  }
-
-  hasTrackChanged(currentTrack: Track | null): boolean {
-    const trackId = currentTrack ? `${currentTrack.name}|${currentTrack.artist}` : null;
-    const changed = this.lastTrackId !== trackId;
-    this.lastTrackId = trackId;
-    return changed;
-  }
-
-  formatTrackForBio(track: Track): string {
-    return `Now playing: ${track.name} by ${track.artist}`;
   }
 }

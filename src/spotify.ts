@@ -1,12 +1,15 @@
 import SpotifyWebApi from 'spotify-web-api-node';
 import { config } from './config';
-import { MusicService, Track } from './musicService';
+import { Track } from './musicService';
+import { BaseMusicService } from './baseMusicService';
+import { ErrorMessages, SPOTIFY_MAX_RETRY_ATTEMPTS } from './constants';
 
-export class SpotifyService implements MusicService {
+export class SpotifyService extends BaseMusicService {
   private spotifyApi: SpotifyWebApi;
-  private lastTrackId: string | null = null;
+  private refreshAttempts = 0;
 
   constructor() {
+    super();
     this.spotifyApi = new SpotifyWebApi({
       clientId: config.spotify!.clientId,
       clientSecret: config.spotify!.clientSecret,
@@ -18,8 +21,9 @@ export class SpotifyService implements MusicService {
     try {
       const data = await this.spotifyApi.refreshAccessToken();
       this.spotifyApi.setAccessToken(data.body.access_token);
+      this.refreshAttempts = 0;
     } catch (error) {
-      throw new Error(`spotify auth failed: ${error}`);
+      throw new Error(`${ErrorMessages.AUTH_FAILED} (Spotify): ${error}`);
     }
   }
 
@@ -27,7 +31,11 @@ export class SpotifyService implements MusicService {
     try {
       const data = await this.spotifyApi.getMyCurrentPlayingTrack();
 
-      if (!data.body?.item || !data.body.is_playing || data.body.item.type !== 'track') {
+      if (!data.body?.item) {
+        return null;
+      }
+
+      if (!data.body.is_playing || data.body.item.type !== 'track') {
         return null;
       }
 
@@ -35,31 +43,36 @@ export class SpotifyService implements MusicService {
 
       return {
         name: track.name,
-        artist: track.artists.map(artist => artist.name).join(', '),
+        artist: track.artists.map((artist: SpotifyApi.ArtistObjectSimplified) => artist.name).join(', '),
         album: track.album.name,
         isPlaying: true,
       };
-    } catch (error: any) {
-      if (error.statusCode === 401) {
-        const refreshData = await this.spotifyApi.refreshAccessToken();
-        this.spotifyApi.setAccessToken(refreshData.body.access_token);
-        return await this.getCurrentTrack();
+    } catch (error: unknown) {
+      if (this.isSpotifyError(error)) {
+        if (error.statusCode === 401 && this.refreshAttempts < SPOTIFY_MAX_RETRY_ATTEMPTS) {
+          this.refreshAttempts++;
+          try {
+            const refreshData = await this.spotifyApi.refreshAccessToken();
+            this.spotifyApi.setAccessToken(refreshData.body.access_token);
+            return await this.getCurrentTrack();
+          } catch (refreshError) {
+            this.refreshAttempts = 0;
+            throw new Error(`Failed to refresh Spotify token: ${refreshError}`);
+          }
+        }
+
+        if (error.statusCode === 204) {
+          this.refreshAttempts = 0;
+          return null;
+        }
       }
-      if (error.statusCode === 204) {
-        return null;
-      }
+
+      this.refreshAttempts = 0;
       throw error;
     }
   }
 
-  hasTrackChanged(currentTrack: Track | null): boolean {
-    const trackId = currentTrack ? `${currentTrack.name}|${currentTrack.artist}` : null;
-    const changed = this.lastTrackId !== trackId;
-    this.lastTrackId = trackId;
-    return changed;
-  }
-
-  formatTrackForBio(track: Track): string {
-    return `Now playing: ${track.name} by ${track.artist}`;
+  private isSpotifyError(error: unknown): error is { statusCode: number } {
+    return typeof error === 'object' && error !== null && 'statusCode' in error;
   }
 }

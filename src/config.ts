@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { DEFAULT_UPDATE_INTERVAL_SECONDS, ErrorMessages } from './constants';
 
 dotenv.config();
 
@@ -24,17 +25,19 @@ export interface Config {
 
 function requireEnv(name: string): string {
   const value = process.env[name];
-  if (!value) {
-    throw new Error(`env ${name} is required`);
+  if (!value || value.trim() === '') {
+    throw new Error(ErrorMessages.ENV_REQUIRED(name));
   }
-  return value;
+  return value.trim();
 }
 
-const musicService = requireEnv('MUSIC_SERVICE').toLowerCase() as MusicService;
+const musicServiceRaw = requireEnv('MUSIC_SERVICE').toLowerCase().trim() as MusicService;
 
-if (!['spotify', 'lastfm'].includes(musicService)) {
-  throw new Error(`invalid MUSIC_SERVICE: ${musicService}.`);
+if (!['spotify', 'lastfm'].includes(musicServiceRaw)) {
+  throw new Error(ErrorMessages.INVALID_MUSIC_SERVICE(musicServiceRaw));
 }
+
+const musicService: MusicService = musicServiceRaw;
 
 const serviceConfigs = {
   spotify: () => ({
@@ -56,5 +59,5 @@ export const config: Config = {
     username: requireEnv('BSKY_USERNAME'),
     password: requireEnv('BSKY_PASSWORD'),
   },
-  updateInterval: parseInt(process.env.UPDATE_INTERVAL || '30') * 1000,
+  updateInterval: parseInt(process.env.UPDATE_INTERVAL || String(DEFAULT_UPDATE_INTERVAL_SECONDS)) * 1000,
 };
