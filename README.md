@@ -1,61 +1,36 @@
-<div align="center">
+# bluetify
 
-# Bluetify
-Music (spotify & last.fm) integration for Bluesky bio
-
-</div>
-
-### Installation
-
-**1. Clone the repository**
-
-```bash
-git clone https://github.com/unicodick/bluetify.git
-cd bluetify
-```
-
-**2. Set up Spotify App**
-
-- Navigate to [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)
-- Create a new app
-- Save your `Client ID` and `Client Secret`
-- Add redirect URI: `https://spotify-refresh-token-generator.netlify.app`
-
-**3. Generate Refresh Token**
-
-- Visit [Spotify Refresh Token Generator](https://spotify-refresh-token-generator.netlify.app)
-- Enter your credentials
-- Required scope: `user-read-currently-playing`
-- Copy the generated refresh token
-
-**4. Set up Last.fm**
-
-- Navigate to [Last.fm API](https://www.last.fm/api/account/create)
-- Create an API account and get your API key
-- Note your Last.fm username
-
-**5. Configure Environment**
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your credentials or configure `docker-compose.yml` directly.
-
-**6. Run Application**
-
-```bash
-npm ci && npm run build
-npm start
-```
+Updates your [Bluesky](https://bsky.app) bio with whatever you're currently listening to on [Last.fm](https://last.fm).
 
 ---
 
+```sh
+git clone https://github.com/unicodick/bluetify.git
+cd bluetify
+cp .env.example .env
+```
+
+Fill in `.env`:
+
+```env
+LASTFM_API_KEY=apikey
+LASTFM_USERNAME=user
+BSKY_USERNAME=user.handle
+BSKY_PASSWORD=apppasword
+UPDATE_INTERVAL=30
+```
+
+> Get your Last.fm API key at [last.fm/api/account/create](https://www.last.fm/api/account/create).  
+> Use a Bluesky [App Password](https://bsky.app/settings/app-passwords), not your main password.  
+> `UPDATE_INTERVAL` is in seconds, minimum `10`, default `30`.
+
+```sh
+npm ci && npm run build && npm start
+```
+
 ## Docker
 
-Run with Docker Compose:
-
-```bash
+```sh
 docker build -t bluetify .
-docker compose up -d
+docker run -d --env-file .env --name bluetify bluetify
 ```

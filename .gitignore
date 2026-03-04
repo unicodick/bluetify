@@ -3,10 +3,10 @@ node_modules/
 
 # Build output
 dist/
-build/
 
 # Environment files
 .env
+!.env.example
 
 # Logs
 *.log
@@ -23,6 +23,3 @@ coverage/
 
 # Temporary files
 *.tmp
-
-# TypeScript declaration files
-*.d.ts

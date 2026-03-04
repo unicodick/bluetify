@@ -1,63 +1,37 @@
-import dotenv from 'dotenv';
-import { DEFAULT_UPDATE_INTERVAL_SECONDS, ErrorMessages } from './constants';
-
-dotenv.config();
-
-export type MusicService = 'spotify' | 'lastfm';
-
-export interface Config {
-  musicService: MusicService;
-  spotify?: {
-    clientId: string;
-    clientSecret: string;
-    refreshToken: string;
-  };
-  bluesky: {
-    username: string;
-    password: string;
-  };
-  lastfm?: {
-    apiKey: string;
-    username: string;
-  };
-  updateInterval: number;
-}
+const DEFAULT_UPDATE_INTERVAL_SECONDS = 30;
+const MIN_UPDATE_INTERVAL_SECONDS = 10;
 
 function requireEnv(name: string): string {
-  const value = process.env[name];
-  if (!value || value.trim() === '') {
-    throw new Error(ErrorMessages.ENV_REQUIRED(name));
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`env ${name} is required`);
   }
-  return value.trim();
+  return value;
 }
 
-const musicServiceRaw = requireEnv('MUSIC_SERVICE').toLowerCase().trim() as MusicService;
+function parseUpdateInterval(raw: string | undefined): number {
+  const value = raw?.trim() ?? String(DEFAULT_UPDATE_INTERVAL_SECONDS);
+  const seconds = Number(value);
 
-if (!['spotify', 'lastfm'].includes(musicServiceRaw)) {
-  throw new Error(ErrorMessages.INVALID_MUSIC_SERVICE(musicServiceRaw));
+  if (!Number.isFinite(seconds) || seconds < MIN_UPDATE_INTERVAL_SECONDS) {
+    throw new Error(
+      `UPDATE_INTERVAL must be a number >= ${MIN_UPDATE_INTERVAL_SECONDS} seconds. Received: ${value}`
+    );
+  }
+
+  return Math.floor(seconds * 1000);
 }
 
-const musicService: MusicService = musicServiceRaw;
-
-const serviceConfigs = {
-  spotify: () => ({
-    clientId: requireEnv('SPOTIFY_CLIENT_ID'),
-    clientSecret: requireEnv('SPOTIFY_CLIENT_SECRET'),
-    refreshToken: requireEnv('SPOTIFY_REFRESH_TOKEN'),
-  }),
-  lastfm: () => ({
-    apiKey: requireEnv('LASTFM_API_KEY'),
-    username: requireEnv('LASTFM_USERNAME'),
-  }),
-};
-
-export const config: Config = {
-  musicService,
-  spotify: musicService === 'spotify' ? serviceConfigs.spotify() : undefined,
-  lastfm: musicService === 'lastfm' ? serviceConfigs.lastfm() : undefined,
+export const config = {
   bluesky: {
     username: requireEnv('BSKY_USERNAME'),
     password: requireEnv('BSKY_PASSWORD'),
   },
-  updateInterval: parseInt(process.env.UPDATE_INTERVAL || String(DEFAULT_UPDATE_INTERVAL_SECONDS)) * 1000,
-};
+  lastfm: {
+    apiKey: requireEnv('LASTFM_API_KEY'),
+    username: requireEnv('LASTFM_USERNAME'),
+  },
+  updateIntervalMs: parseUpdateInterval(process.env.UPDATE_INTERVAL),
+} as const;
+
+export type Config = typeof config;

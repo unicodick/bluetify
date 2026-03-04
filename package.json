@@ -1,30 +1,18 @@
 {
   "name": "bluetify",
   "version": "1.2.2",
-  "description": "Music (spotify & last.fm) integration for Bluesky bio",
+  "description": "Last.fm integration for Bluesky bio",
+  "type": "module",
   "main": "dist/index.js",
-  "author": "unicodick",
-  "license": "MIT",
-  "homepage": "https://github.com/unicodick/bluetify#readme",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/unicodick/bluetify.git"
-  },
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
-    "dev": "ts-node src/index.ts"
+    "start": "node --env-file=.env dist/index.js",
+    "dev": "tsx watch --env-file=.env src/index.ts"
   },
-  "dependencies": {
-    "@atproto/api": "^0.17.3",
-    "@imikailoby/lastfm-ts": "^2.0.0",
-    "dotenv": "^17.2.3",
-    "spotify-web-api-node": "^5.0.2"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/node": "^24.8.1",
-    "@types/spotify-web-api-node": "^5.0.11",
-    "ts-node": "^10.9.2",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.4",
     "typescript": "^5.9.3"
   }
 }

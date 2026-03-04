@@ -1,56 +1,59 @@
-import { LastFm } from '@imikailoby/lastfm-ts';
-import { config } from './config';
-import { Track } from './musicService';
-import { BaseMusicService } from './baseMusicService';
-import { ErrorMessages } from './constants';
+import { config } from './config.js';
+import { Track } from './types.js';
 
-export class LastFmService extends BaseMusicService {
-  private lastFm: LastFm;
+const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 
-  constructor() {
-    super();
-    this.lastFm = new LastFm(config.lastfm!.apiKey);
+interface LastFmTrack {
+  name: string;
+  artist: { '#text': string } | string;
+  '@attr'?: { nowplaying?: string };
+}
+
+interface LastFmResponse {
+  recenttracks?: {
+    track?: LastFmTrack | LastFmTrack[];
+  };
+  error?: number;
+  message?: string;
+}
+
+function getArtistName(artist: LastFmTrack['artist']): string {
+  return typeof artist === 'string' ? artist : artist['#text'];
+}
+
+function mapNowPlaying(response: LastFmResponse): Track | null {
+  const tracks = response.recenttracks?.track;
+  if (!tracks) return null;
+
+  const track = Array.isArray(tracks) ? tracks[0] : tracks;
+  if (!track || track['@attr']?.nowplaying !== 'true') return null;
+
+  return {
+    name: track.name || 'Unknown Track',
+    artist: getArtistName(track.artist) || 'Unknown Artist',
+  };
+}
+
+export async function getNowPlaying(): Promise<Track | null> {
+  const params = new URLSearchParams({
+    method: 'user.getrecenttracks',
+    user: config.lastfm.username,
+    api_key: config.lastfm.apiKey,
+    format: 'json',
+    limit: '1',
+  });
+
+  const response = await fetch(`${LASTFM_API_URL}?${params}`);
+
+  if (!response.ok) {
+    throw new Error(`last.fm request failed: ${response.status} ${response.statusText}`);
   }
 
-  async initialize(): Promise<void> {
-    try {
-      await this.lastFm.user.getInfo({ user: config.lastfm!.username });
-    } catch (error) {
-      throw new Error(`${ErrorMessages.AUTH_FAILED} (Last.fm): ${error}`);
-    }
+  const data = (await response.json()) as LastFmResponse;
+
+  if (data.error) {
+    throw new Error(`last.fm API error ${data.error}: ${data.message}`);
   }
 
-  async getCurrentTrack(): Promise<Track | null> {
-    try {
-      const response = await this.lastFm.user.getRecentTracks({
-        user: config.lastfm!.username,
-        limit: '1',
-        extended: '1',
-      });
-
-      if (!response.recenttracks?.track?.length) {
-        return null;
-      }
-
-      const track = response.recenttracks.track[0] as any;
-      const isNowPlaying = track['@attr']?.nowplaying === 'true';
-
-      if (!isNowPlaying) {
-        return null;
-      }
-
-      const artistName = track.artist?.name || track.artist?.['#text'] || 'Unknown Artist';
-      const albumName = track.album?.['#text'] || 'Unknown Album';
-      const trackName = track.name || 'Unknown Track';
-
-      return {
-        name: trackName,
-        artist: artistName,
-        album: albumName,
-        isPlaying: true,
-      };
-    } catch (error) {
-      throw new Error(`Failed to fetch Last.fm track: ${error}`);
-    }
-  }
+  return mapNowPlaying(data);
 }

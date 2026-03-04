@@ -1,67 +1,105 @@
-import { BskyAgent, AppBskyActorProfile } from '@atproto/api';
-import { config } from './config';
-import { BLUESKY_SERVICE_URL, BLUESKY_BIO_MAX_LENGTH, ErrorMessages } from './constants';
+import { config } from './config.js';
+import { BLUESKY_SERVICE_URL, BLUESKY_BIO_MAX_LENGTH } from './constants.js';
+import { BlueskyProfile } from './types.js';
+
+interface AtpSession {
+  accessJwt: string;
+  did: string;
+}
+
+interface AtpGetRecordResponse {
+  value: BlueskyProfile;
+  cid: string;
+}
+
+interface AtpError {
+  error: string;
+  message: string;
+}
+
+async function atpFetch<T>(
+  endpoint: string,
+  options: RequestInit = {}
+): Promise<T> {
+  const url = `${BLUESKY_SERVICE_URL}/xrpc/${endpoint}`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+  });
+
+  const data = await response.json() as T | AtpError;
+
+  if (!response.ok) {
+    const err = data as AtpError;
+    throw new Error(`bsky API error [${endpoint}]: ${err.error} - ${err.message}`);
+  }
+
+  return data as T;
+}
 
 export class BlueskyService {
-  private agent: BskyAgent;
-
-  constructor() {
-    this.agent = new BskyAgent({ service: BLUESKY_SERVICE_URL });
-  }
+  private session: AtpSession | null = null;
+  private originalProfile: BlueskyProfile | null = null;
 
   async initialize(): Promise<void> {
-    try {
-      await this.agent.login({
+    this.session = await atpFetch<AtpSession>('com.atproto.server.createSession', {
+      method: 'POST',
+      body: JSON.stringify({
         identifier: config.bluesky.username,
         password: config.bluesky.password,
-      });
-    } catch (error) {
-      throw new Error(`${ErrorMessages.AUTH_FAILED} (Bluesky): ${error}`);
-    }
+      }),
+    });
+
+    this.originalProfile = await this.fetchProfile();
   }
 
-  async updateProfile(newDescription: string): Promise<void> {
-    try {
-      const validatedDescription = this.validateBioLength(newDescription);
-
-      await this.agent.upsertProfile((existing: AppBskyActorProfile.Record | undefined) => {
-        return {
-          displayName: existing?.displayName ?? '',
-          description: validatedDescription,
-          avatar: existing?.avatar,
-          banner: existing?.banner,
-        };
-      });
-    } catch (error) {
-      throw new Error(`${ErrorMessages.PROFILE_UPDATE_FAILED}: ${error}`);
-    }
+  getOriginalDescription(): string {
+    return this.originalProfile?.description ?? '';
   }
 
-  async getCurrentDescription(): Promise<string> {
-    try {
-      const profileResponse = await this.agent.getProfile({
-        actor: config.bluesky.username,
-      });
-
-      return profileResponse.data.description || '';
-    } catch (error) {
-      throw new Error(`Failed to fetch profile description: ${error}`);
+  async updateDescription(description: string): Promise<void> {
+    if (!this.session) {
+      throw new Error('bsky session not init');
     }
+
+    const truncated = description.length > BLUESKY_BIO_MAX_LENGTH
+      ? description.slice(0, BLUESKY_BIO_MAX_LENGTH)
+      : description;
+
+    const current = await this.fetchProfile();
+
+    await atpFetch('com.atproto.repo.putRecord', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${this.session.accessJwt}` },
+      body: JSON.stringify({
+        repo: this.session.did,
+        collection: 'app.bsky.actor.profile',
+        rkey: 'self',
+        record: {
+          ...current,
+          $type: 'app.bsky.actor.profile',
+          description: truncated,
+        },
+      }),
+    });
   }
 
-  async restoreOriginalBio(originalBio: string): Promise<void> {
-    try {
-      await this.updateProfile(originalBio);
-    } catch (error) {
-      throw new Error(`${ErrorMessages.BIO_RESTORE_FAILED}: ${error}`);
-    }
+  async restoreOriginalDescription(): Promise<void> {
+    await this.updateDescription(this.getOriginalDescription());
   }
 
-  private validateBioLength(bio: string): string {
-    if (bio.length > BLUESKY_BIO_MAX_LENGTH) {
-      console.warn(`Bio exceeds ${BLUESKY_BIO_MAX_LENGTH} characters, truncating...`);
-      return bio.substring(0, BLUESKY_BIO_MAX_LENGTH);
+  private async fetchProfile(): Promise<BlueskyProfile> {
+    if (!this.session) {
+      throw new Error('bsky session not init');
     }
-    return bio;
+
+    const data = await atpFetch<AtpGetRecordResponse>(
+      `com.atproto.repo.getRecord?repo=${encodeURIComponent(this.session.did)}&collection=app.bsky.actor.profile&rkey=self`,
+    );
+
+    return data.value;
   }
 }
