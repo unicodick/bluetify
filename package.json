@@ -1,6 +1,6 @@
 {
   "name": "bluetify",
-  "version": "1.2.2",
+  "version": "2.0.0",
   "description": "Last.fm integration for Bluesky bio",
   "type": "module",
   "main": "dist/index.js",
