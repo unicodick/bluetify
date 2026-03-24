@@ -1,4 +1,6 @@
 import { config } from './config.js';
+import { HTTP_REQUEST_TIMEOUT_MS } from './constants.js';
+import { fetchWithTimeout } from './http.js';
 import { Track } from './types.js';
 
 const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
@@ -15,6 +17,17 @@ interface LastFmResponse {
   };
   error?: number;
   message?: string;
+}
+
+function parseJsonOrNull<T>(rawBody: string): T | null {
+  const trimmed = rawBody.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return null;
+  }
 }
 
 function getArtistName(artist: LastFmTrack['artist']): string {
@@ -43,13 +56,24 @@ export async function getNowPlaying(): Promise<Track | null> {
     limit: '1',
   });
 
-  const response = await fetch(`${LASTFM_API_URL}?${params}`);
+  const response = await fetchWithTimeout(
+    'last.fm user.getrecenttracks',
+    HTTP_REQUEST_TIMEOUT_MS,
+    `${LASTFM_API_URL}?${params}`,
+  );
+  const rawBody = await response.text();
 
   if (!response.ok) {
-    throw new Error(`last.fm request failed: ${response.status} ${response.statusText}`);
+    const fallbackBody = rawBody.trim().slice(0, 300) || '<empty body>';
+    throw new Error(
+      `last.fm request failed: ${response.status} ${response.statusText}. body: ${fallbackBody}`,
+    );
   }
 
-  const data = (await response.json()) as LastFmResponse;
+  const data = parseJsonOrNull<LastFmResponse>(rawBody);
+  if (data === null) {
+    throw new Error(`last.fm request failed: invalid JSON response (HTTP ${response.status})`);
+  }
 
   if (data.error) {
     throw new Error(`last.fm API error ${data.error}: ${data.message}`);

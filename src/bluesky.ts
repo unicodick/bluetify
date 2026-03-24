@@ -1,5 +1,10 @@
 import { config } from './config.js';
-import { BLUESKY_SERVICE_URL, BLUESKY_BIO_MAX_LENGTH } from './constants.js';
+import {
+  BLUESKY_SERVICE_URL,
+  BLUESKY_BIO_MAX_LENGTH,
+  HTTP_REQUEST_TIMEOUT_MS,
+} from './constants.js';
+import { fetchWithTimeout } from './http.js';
 import { BlueskyProfile } from './types.js';
 
 interface AtpSession {
@@ -17,27 +22,58 @@ interface AtpError {
   message: string;
 }
 
+function parseJsonOrNull<T>(rawBody: string): T | null {
+  const trimmed = rawBody.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return null;
+  }
+}
+
 async function atpFetch<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${BLUESKY_SERVICE_URL}/xrpc/${endpoint}`;
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(
+    `bsky request [${endpoint}]`,
+    HTTP_REQUEST_TIMEOUT_MS,
+    url,
+    {
     ...options,
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
     },
-  });
+    },
+  );
 
-  const data = await response.json() as T | AtpError;
+  const rawBody = await response.text();
 
   if (!response.ok) {
-    const err = data as AtpError;
-    throw new Error(`bsky API error [${endpoint}]: ${err.error} - ${err.message}`);
+    const err = parseJsonOrNull<AtpError>(rawBody);
+
+    if (err?.error && err?.message) {
+      throw new Error(`bsky API error [${endpoint}]: ${err.error} - ${err.message}`);
+    }
+
+    const fallbackBody = rawBody.trim().slice(0, 300) || '<empty body>';
+    throw new Error(
+      `bsky API error [${endpoint}]: HTTP ${response.status} ${response.statusText}. body: ${fallbackBody}`,
+    );
   }
 
-  return data as T;
+  const data = parseJsonOrNull<T>(rawBody);
+  if (data === null) {
+    throw new Error(
+      `bsky API error [${endpoint}]: invalid JSON response (HTTP ${response.status})`,
+    );
+  }
+
+  return data;
 }
 
 export class BlueskyService {
