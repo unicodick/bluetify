@@ -5,7 +5,7 @@ import { Track } from './types.js';
 
 export class BluetifyApp {
   private readonly bluesky = new BlueskyService();
-  private intervalId: NodeJS.Timeout | null = null;
+  private timeoutId: NodeJS.Timeout | null = null;
   private lastTrackId: string | null = null;
   private isShuttingDown = false;
 
@@ -16,16 +16,16 @@ export class BluetifyApp {
 
   async start(): Promise<void> {
     await this.tick();
-    this.intervalId = setInterval(() => void this.tick(), config.updateIntervalMs);
+    this.scheduleNextTick();
     console.log(`[bluetify] polling every ${config.updateIntervalMs / 1000}s`);
   }
 
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
 
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+    if (this.timeoutId) {
+      clearTimeout(this.timeoutId);
+      this.timeoutId = null;
     }
 
     await this.bluesky.restoreOriginalDescription();
@@ -53,6 +53,22 @@ export class BluetifyApp {
       console.log(`[bluetify] now playing: ${track.name} - ${track.artist}`);
     } catch (error) {
       console.error('[bluetify] tick error:', error instanceof Error ? error.message : error);
+    }
+  }
+
+  private scheduleNextTick(): void {
+    if (this.isShuttingDown) return;
+
+    this.timeoutId = setTimeout(() => {
+      void this.runScheduledTick();
+    }, config.updateIntervalMs);
+  }
+
+  private async runScheduledTick(): Promise<void> {
+    try {
+      await this.tick();
+    } finally {
+      this.scheduleNextTick();
     }
   }
 }
