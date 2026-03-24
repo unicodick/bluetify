@@ -1,8 +1,20 @@
 const DEFAULT_UPDATE_INTERVAL_SECONDS = 30;
 const MIN_UPDATE_INTERVAL_SECONDS = 10;
 
-function requireEnv(name: string): string {
-  const value = process.env[name]?.trim();
+export interface Config {
+  bluesky: {
+    username: string;
+    password: string;
+  };
+  lastfm: {
+    apiKey: string;
+    username: string;
+  };
+  updateIntervalMs: number;
+}
+
+function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
+  const value = env[name]?.trim();
   if (!value) {
     throw new Error(`env ${name} is required`);
   }
@@ -22,16 +34,16 @@ function parseUpdateInterval(raw: string | undefined): number {
   return Math.floor(seconds * 1000);
 }
 
-export const config = {
-  bluesky: {
-    username: requireEnv('BSKY_USERNAME'),
-    password: requireEnv('BSKY_PASSWORD'),
-  },
-  lastfm: {
-    apiKey: requireEnv('LASTFM_API_KEY'),
-    username: requireEnv('LASTFM_USERNAME'),
-  },
-  updateIntervalMs: parseUpdateInterval(process.env.UPDATE_INTERVAL),
-} as const;
-
-export type Config = typeof config;
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
+  return {
+    bluesky: {
+      username: requireEnv(env, 'BSKY_USERNAME'),
+      password: requireEnv(env, 'BSKY_PASSWORD'),
+    },
+    lastfm: {
+      apiKey: requireEnv(env, 'LASTFM_API_KEY'),
+      username: requireEnv(env, 'LASTFM_USERNAME'),
+    },
+    updateIntervalMs: parseUpdateInterval(env.UPDATE_INTERVAL),
+  };
+}

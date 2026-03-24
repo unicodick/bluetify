@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { Config } from './config.js';
 import { HTTP_REQUEST_TIMEOUT_MS } from './constants.js';
 import { fetchWithTimeout } from './http.js';
 import { Track } from './types.js';
@@ -47,7 +47,7 @@ function mapNowPlaying(response: LastFmResponse): Track | null {
   };
 }
 
-export async function getNowPlaying(): Promise<Track | null> {
+export async function getNowPlaying(config: Config): Promise<Track | null> {
   const params = new URLSearchParams({
     method: 'user.getrecenttracks',
     user: config.lastfm.username,

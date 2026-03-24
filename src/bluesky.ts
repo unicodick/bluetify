@@ -1,4 +1,4 @@
-import { config } from './config.js';
+import { Config } from './config.js';
 import {
   BLUESKY_SERVICE_URL,
   BLUESKY_BIO_MAX_LENGTH,
@@ -77,6 +77,8 @@ async function atpFetch<T>(
 }
 
 export class BlueskyService {
+  constructor(private readonly config: Config) {}
+
   private session: AtpSession | null = null;
   private originalProfile: BlueskyProfile | null = null;
 
@@ -84,8 +86,8 @@ export class BlueskyService {
     this.session = await atpFetch<AtpSession>('com.atproto.server.createSession', {
       method: 'POST',
       body: JSON.stringify({
-        identifier: config.bluesky.username,
-        password: config.bluesky.password,
+        identifier: this.config.bluesky.username,
+        password: this.config.bluesky.password,
       }),
     });
 

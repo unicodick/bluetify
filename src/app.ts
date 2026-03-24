@@ -1,23 +1,30 @@
 import { BlueskyService } from './bluesky.js';
-import { config } from './config.js';
+import { Config, loadConfig } from './config.js';
 import { getNowPlaying } from './lastfm.js';
 import { Track } from './types.js';
 
 export class BluetifyApp {
-  private readonly bluesky = new BlueskyService();
+  private bluesky: BlueskyService | null = null;
+  private config: Config | null = null;
   private timeoutId: NodeJS.Timeout | null = null;
   private lastTrackId: string | null = null;
   private isShuttingDown = false;
 
   async initialize(): Promise<void> {
+    this.config = loadConfig();
+    this.bluesky = new BlueskyService(this.config);
     await this.bluesky.initialize();
     console.log('[bluetify] init. original bio saved.');
   }
 
   async start(): Promise<void> {
+    if (!this.config) {
+      throw new Error('app config not init');
+    }
+
     await this.tick();
     this.scheduleNextTick();
-    console.log(`[bluetify] polling every ${config.updateIntervalMs / 1000}s`);
+    console.log(`[bluetify] polling every ${this.config.updateIntervalMs / 1000}s`);
   }
 
   async shutdown(): Promise<void> {
@@ -28,15 +35,20 @@ export class BluetifyApp {
       this.timeoutId = null;
     }
 
+    if (!this.bluesky) return;
+
     await this.bluesky.restoreOriginalDescription();
     console.log('[bluetify] bio restored. bye.');
   }
 
   private async tick(): Promise<void> {
     if (this.isShuttingDown) return;
+    if (!this.config || !this.bluesky) {
+      throw new Error('app not init');
+    }
 
     try {
-      const track = await getNowPlaying();
+      const track = await getNowPlaying(this.config);
       const trackId = getTrackId(track);
 
       if (trackId === this.lastTrackId) return;
@@ -58,10 +70,13 @@ export class BluetifyApp {
 
   private scheduleNextTick(): void {
     if (this.isShuttingDown) return;
+    if (!this.config) {
+      throw new Error('app config not init');
+    }
 
     this.timeoutId = setTimeout(() => {
       void this.runScheduledTick();
-    }, config.updateIntervalMs);
+    }, this.config.updateIntervalMs);
   }
 
   private async runScheduledTick(): Promise<void> {
