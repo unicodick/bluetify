@@ -1,7 +1,11 @@
-import { Config } from './config.js';
-import { HTTP_REQUEST_TIMEOUT_MS } from './constants.js';
-import { fetchWithTimeout } from './http.js';
-import { Track } from './types.js';
+import { Config } from '../../config/index.js';
+import {
+  HTTP_ERROR_BODY_PREVIEW_MAX_LENGTH,
+  HTTP_REQUEST_TIMEOUT_MS,
+  fetchWithTimeout,
+  parseJsonOrNull,
+} from '../../core/index.js';
+import { Track } from '../../domain/index.js';
 
 const LASTFM_API_URL = 'https://ws.audioscrobbler.com/2.0/';
 
@@ -17,17 +21,6 @@ interface LastFmResponse {
   };
   error?: number;
   message?: string;
-}
-
-function parseJsonOrNull<T>(rawBody: string): T | null {
-  const trimmed = rawBody.trim();
-  if (!trimmed) return null;
-
-  try {
-    return JSON.parse(trimmed) as T;
-  } catch {
-    return null;
-  }
 }
 
 function getArtistName(artist: LastFmTrack['artist']): string {
@@ -64,7 +57,7 @@ export async function getNowPlaying(config: Config): Promise<Track | null> {
   const rawBody = await response.text();
 
   if (!response.ok) {
-    const fallbackBody = rawBody.trim().slice(0, 300) || '<empty body>';
+    const fallbackBody = rawBody.trim().slice(0, HTTP_ERROR_BODY_PREVIEW_MAX_LENGTH) || '<empty body>';
     throw new Error(
       `last.fm request failed: ${response.status} ${response.statusText}. body: ${fallbackBody}`,
     );

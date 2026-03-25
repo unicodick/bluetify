@@ -17,6 +17,17 @@ function isAbortError(error: unknown): boolean {
   );
 }
 
+export function parseJsonOrNull<T>(rawBody: string): T | null {
+  const trimmed = rawBody.trim();
+  if (!trimmed) return null;
+
+  try {
+    return JSON.parse(trimmed) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchWithTimeout(
   requestLabel: string,
   timeoutMs: number,

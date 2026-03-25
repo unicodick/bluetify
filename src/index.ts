@@ -1,8 +1,15 @@
-import { BluetifyApp } from './app.js';
+import { BluetifyApp } from './app/index.js';
+import { loadConfig } from './config/index.js';
+import { logger } from './core/index.js';
+import { BlueskyService } from './integrations/bluesky/index.js';
 
-const app = new BluetifyApp();
+let app: BluetifyApp | null = null;
 
 async function shutdown(): Promise<void> {
+  if (!app) {
+    process.exit(0);
+  }
+
   try {
     await app.shutdown();
     process.exit(0);
@@ -15,9 +22,11 @@ process.on('SIGINT', () => void shutdown());
 process.on('SIGTERM', () => void shutdown());
 
 try {
+  const config = loadConfig();
+  app = new BluetifyApp(config, new BlueskyService(config));
   await app.initialize();
   await app.start();
 } catch (error) {
-  console.error('[bluetify] failed to start:', error instanceof Error ? error.message : error);
+  logger.error('failed to start:', error, 'bootstrap');
   process.exit(1);
 }
