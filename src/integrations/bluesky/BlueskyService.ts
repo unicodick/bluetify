@@ -1,11 +1,13 @@
-import { Config } from './config.js';
+import { Config } from '../../config/index.js';
 import {
-  BLUESKY_SERVICE_URL,
   BLUESKY_BIO_MAX_LENGTH,
+  BLUESKY_SERVICE_URL,
+  HTTP_ERROR_BODY_PREVIEW_MAX_LENGTH,
   HTTP_REQUEST_TIMEOUT_MS,
-} from './constants.js';
-import { fetchWithTimeout } from './http.js';
-import { BlueskyProfile } from './types.js';
+  fetchWithTimeout,
+  parseJsonOrNull,
+} from '../../core/index.js';
+import { BlueskyProfile } from '../../domain/index.js';
 
 interface AtpSession {
   accessJwt: string;
@@ -22,32 +24,18 @@ interface AtpError {
   message: string;
 }
 
-function parseJsonOrNull<T>(rawBody: string): T | null {
-  const trimmed = rawBody.trim();
-  if (!trimmed) return null;
-
-  try {
-    return JSON.parse(trimmed) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function atpFetch<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
+async function atpFetch<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const url = `${BLUESKY_SERVICE_URL}/xrpc/${endpoint}`;
   const response = await fetchWithTimeout(
     `bsky request [${endpoint}]`,
     HTTP_REQUEST_TIMEOUT_MS,
     url,
     {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      },
     },
   );
 
@@ -60,7 +48,7 @@ async function atpFetch<T>(
       throw new Error(`bsky API error [${endpoint}]: ${err.error} - ${err.message}`);
     }
 
-    const fallbackBody = rawBody.trim().slice(0, 300) || '<empty body>';
+    const fallbackBody = rawBody.trim().slice(0, HTTP_ERROR_BODY_PREVIEW_MAX_LENGTH) || '<empty body>';
     throw new Error(
       `bsky API error [${endpoint}]: HTTP ${response.status} ${response.statusText}. body: ${fallbackBody}`,
     );
@@ -68,9 +56,7 @@ async function atpFetch<T>(
 
   const data = parseJsonOrNull<T>(rawBody);
   if (data === null) {
-    throw new Error(
-      `bsky API error [${endpoint}]: invalid JSON response (HTTP ${response.status})`,
-    );
+    throw new Error(`bsky API error [${endpoint}]: invalid JSON response (HTTP ${response.status})`);
   }
 
   return data;
@@ -94,7 +80,7 @@ export class BlueskyService {
     this.originalProfile = await this.fetchProfile();
   }
 
-  getOriginalDescription(): string {
+  private getOriginalDescription(): string {
     return this.originalProfile?.description ?? '';
   }
 

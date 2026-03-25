@@ -1,17 +1,7 @@
+import { Config } from './types.js';
+
 const DEFAULT_UPDATE_INTERVAL_SECONDS = 30;
 const MIN_UPDATE_INTERVAL_SECONDS = 10;
-
-export interface Config {
-  bluesky: {
-    username: string;
-    password: string;
-  };
-  lastfm: {
-    apiKey: string;
-    username: string;
-  };
-  updateIntervalMs: number;
-}
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name]?.trim();
