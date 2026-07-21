@@ -10,6 +10,8 @@ export function isTransientError(error: unknown): boolean {
     return true;
   }
 
+  if (getBooleanProperty(error, 'retryable') === true) return true;
+
   const status = getNumericProperty(error, 'status');
   return (
     status === 1 ||
@@ -58,4 +60,10 @@ function getNumericProperty(value: unknown, key: string): number | undefined {
   if (typeof value !== 'object' || value === null || !(key in value)) return undefined;
   const property = (value as Record<string, unknown>)[key];
   return typeof property === 'number' && Number.isFinite(property) ? property : undefined;
+}
+
+function getBooleanProperty(value: unknown, key: string): boolean | undefined {
+  if (typeof value !== 'object' || value === null || !(key in value)) return undefined;
+  const property = (value as Record<string, unknown>)[key];
+  return typeof property === 'boolean' ? property : undefined;
 }
