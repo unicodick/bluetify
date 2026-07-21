@@ -1,9 +1,13 @@
 {
   "name": "bluetify",
   "version": "2.0.0",
+  "private": true,
   "description": "Last.fm integration for Bluesky bio",
   "type": "module",
-  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "packageManager": "npm@11.16.0",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
