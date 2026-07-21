@@ -120,6 +120,29 @@ test('serializes repeated shutdown calls', async () => {
   assert.deepEqual(profile.writes, ['🎵 Song by Artist', 'original bio']);
 });
 
+test('does not restore before initialization captures a baseline', async () => {
+  let updateCalls = 0;
+  const profile: ProfileService = {
+    initialize: (signal) => new Promise((_resolve, reject) => {
+      signal?.addEventListener('abort', () => reject(signal.reason), { once: true });
+    }),
+    updateDescription: async () => {
+      updateCalls += 1;
+      return { status: 'updated', description: '' };
+    },
+  };
+  const state = new MemoryStateStore();
+  const app = new BluetifyApp(config, profile, state, async () => null);
+
+  const initialization = app.initialize();
+  await Promise.resolve();
+  await app.shutdown();
+
+  await assert.rejects(initialization, { name: 'AbortError' });
+  assert.equal(updateCalls, 0);
+  assert.equal(state.value, null);
+});
+
 function createApp(
   profile: FakeProfile,
   state: MemoryStateStore,
