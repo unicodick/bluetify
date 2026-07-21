@@ -6,10 +6,10 @@ import {
 } from '@atproto/api';
 import { Config } from '../../config/index.js';
 import {
-  BLUESKY_BIO_MAX_LENGTH,
   BLUESKY_SERVICE_URL,
   HTTP_REQUEST_TIMEOUT_MS,
   fetchWithTimeout,
+  truncateBlueskyDescription,
 } from '../../core/index.js';
 import {
   ProfileService,
@@ -56,9 +56,7 @@ export class BlueskyService implements ProfileService {
     expectedDescription: string,
     signal?: AbortSignal,
   ): Promise<ProfileUpdateResult> {
-    const truncated = description.length > BLUESKY_BIO_MAX_LENGTH
-      ? description.slice(0, BLUESKY_BIO_MAX_LENGTH)
-      : description;
+    const truncated = truncateBlueskyDescription(description);
 
     for (let attempt = 1; attempt <= PROFILE_UPDATE_ATTEMPTS; attempt += 1) {
       const current = await this.fetchProfile(signal);

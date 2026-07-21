@@ -5,6 +5,7 @@ import {
   TIMEOUT_RETRY_BACKOFF_MS,
   logger,
   retry,
+  truncateBlueskyDescription,
 } from '../core/index.js';
 import { getNowPlaying } from '../integrations/lastfm/index.js';
 import { ProfileService, Track } from '../domain/index.js';
@@ -167,5 +168,5 @@ function getTrackId(track: Track | null): string | null {
 }
 
 function formatBio(track: Track): string {
-  return `🎵 ${track.name} by ${track.artist}`;
+  return truncateBlueskyDescription(`🎵 ${track.name} by ${track.artist}`);
 }
