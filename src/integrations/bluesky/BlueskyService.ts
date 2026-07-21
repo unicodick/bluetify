@@ -11,6 +11,11 @@ import {
   HTTP_REQUEST_TIMEOUT_MS,
   fetchWithTimeout,
 } from '../../core/index.js';
+import {
+  ProfileService,
+  ProfileSnapshot,
+  ProfileUpdateResult,
+} from '../../domain/index.js';
 
 const PROFILE_COLLECTION = 'app.bsky.actor.profile';
 const PROFILE_RKEY = 'self';
@@ -21,13 +26,12 @@ interface ProfileRecord {
   value: AppBskyActorProfile.Record;
 }
 
-export class BlueskyService {
+export class BlueskyService implements ProfileService {
   constructor(private readonly config: Config) {}
 
   private agent: Agent | null = null;
-  private originalProfile: AppBskyActorProfile.Record | null = null;
 
-  async initialize(): Promise<void> {
+  async initialize(signal?: AbortSignal): Promise<ProfileSnapshot> {
     const session = new CredentialSession(
       new URL(BLUESKY_SERVICE_URL),
       (input, init) => fetchWithTimeout(
@@ -43,20 +47,25 @@ export class BlueskyService {
     });
 
     this.agent = new Agent(session);
-    this.originalProfile = (await this.fetchProfile()).value;
+    const profile = await this.fetchProfile(signal);
+    return { description: profile.value.description ?? '' };
   }
 
-  private getOriginalDescription(): string {
-    return this.originalProfile?.description ?? '';
-  }
-
-  async updateDescription(description: string): Promise<void> {
+  async updateDescription(
+    description: string,
+    expectedDescription: string,
+    signal?: AbortSignal,
+  ): Promise<ProfileUpdateResult> {
     const truncated = description.length > BLUESKY_BIO_MAX_LENGTH
       ? description.slice(0, BLUESKY_BIO_MAX_LENGTH)
       : description;
 
     for (let attempt = 1; attempt <= PROFILE_UPDATE_ATTEMPTS; attempt += 1) {
-      const current = await this.fetchProfile();
+      const current = await this.fetchProfile(signal);
+      const currentDescription = current.value.description ?? '';
+      if (currentDescription !== expectedDescription) {
+        return { status: 'conflict', description: currentDescription };
+      }
 
       try {
         const agent = this.getAgent();
@@ -70,8 +79,8 @@ export class BlueskyService {
             description: truncated,
           },
           swapRecord: current.cid,
-        });
-        return;
+        }, { signal });
+        return { status: 'updated', description: truncated };
       } catch (error) {
         if (
           error instanceof ComAtprotoRepoPutRecord.InvalidSwapError &&
@@ -82,19 +91,17 @@ export class BlueskyService {
         throw error;
       }
     }
+
+    throw new Error('bsky profile update attempts exhausted');
   }
 
-  async restoreOriginalDescription(): Promise<void> {
-    await this.updateDescription(this.getOriginalDescription());
-  }
-
-  private async fetchProfile(): Promise<ProfileRecord> {
+  private async fetchProfile(signal?: AbortSignal): Promise<ProfileRecord> {
     const agent = this.getAgent();
     const response = await agent.com.atproto.repo.getRecord({
       repo: agent.assertDid,
       collection: PROFILE_COLLECTION,
       rkey: PROFILE_RKEY,
-    });
+    }, { signal });
     const cid = response.data.cid;
     if (!cid) {
       throw new Error('bsky profile response is missing cid');

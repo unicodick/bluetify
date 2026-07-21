@@ -1,1 +1,6 @@
-export type { BlueskyProfile, Track } from './models.js';
+export type {
+  ProfileService,
+  ProfileSnapshot,
+  ProfileUpdateResult,
+  Track,
+} from './models.js';

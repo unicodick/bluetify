@@ -3,10 +3,19 @@ export interface Track {
   artist: string;
 }
 
-export interface BlueskyProfile {
-  displayName?: string;
-  description?: string;
-  avatar?: { ref: { $link: string }; mimeType: string };
-  banner?: { ref: { $link: string }; mimeType: string };
-  [k: string]: unknown;
+export interface ProfileSnapshot {
+  description: string;
+}
+
+export type ProfileUpdateResult =
+  | { status: 'updated'; description: string }
+  | { status: 'conflict'; description: string };
+
+export interface ProfileService {
+  initialize(signal?: AbortSignal): Promise<ProfileSnapshot>;
+  updateDescription(
+    description: string,
+    expectedDescription: string,
+    signal?: AbortSignal,
+  ): Promise<ProfileUpdateResult>;
 }

@@ -7,21 +7,24 @@ import {
   retry,
 } from '../core/index.js';
 import { getNowPlaying } from '../integrations/lastfm/index.js';
-import { BlueskyService } from '../integrations/bluesky/index.js';
-import { Track } from '../domain/index.js';
+import { ProfileService, Track } from '../domain/index.js';
 
 export class BluetifyApp {
   constructor(
     private readonly config: Config,
-    private readonly bluesky: BlueskyService,
+    private readonly profile: ProfileService,
   ) {}
 
   private timeoutId: NodeJS.Timeout | null = null;
   private lastTrackId: string | null = null;
   private isShuttingDown = false;
+  private originalDescription: string | null = null;
+  private lastWrittenDescription: string | null = null;
+  private writesSuspended = false;
 
   async initialize(): Promise<void> {
-    await this.bluesky.initialize();
+    const snapshot = await this.profile.initialize();
+    this.originalDescription = snapshot.description;
     logger.info('init. original bio saved.', 'app');
   }
 
@@ -39,8 +42,8 @@ export class BluetifyApp {
       this.timeoutId = null;
     }
 
-    await this.bluesky.restoreOriginalDescription();
-    logger.info('bio restored. bye.', 'app');
+    const restored = await this.restoreOriginalDescription();
+    logger.info(restored ? 'bio restored. bye.' : 'shutdown complete. bye.', 'app');
   }
 
   private async tick(): Promise<void> {
@@ -54,19 +57,36 @@ export class BluetifyApp {
 
       if (trackId === this.lastTrackId) return;
 
+      if (this.writesSuspended) {
+        this.lastTrackId = trackId;
+        return;
+      }
+
       if (!track) {
-        await this.runWithTimeoutRetry('bsky restore description', () =>
-          this.bluesky.restoreOriginalDescription()
+        const restored = await this.runWithTimeoutRetry(
+          'bsky restore description',
+          () => this.restoreOriginalDescription(),
         );
         this.lastTrackId = null;
-        logger.info('nothing playing - bio restored.', 'app');
+        if (restored) {
+          logger.info('nothing playing - bio restored.', 'app');
+        }
         return;
       }
 
       const bio = formatBio(track);
-      await this.runWithTimeoutRetry('bsky update description', () =>
-        this.bluesky.updateDescription(bio)
+      const expected = this.lastWrittenDescription ?? this.getOriginalDescription();
+      const result = await this.runWithTimeoutRetry(
+        'bsky update description',
+        () => this.profile.updateDescription(bio, expected),
       );
+      if (result.status === 'conflict') {
+        this.suspendWrites(result.description);
+        this.lastTrackId = trackId;
+        return;
+      }
+
+      this.lastWrittenDescription = result.description;
       this.lastTrackId = trackId;
       logger.info(`now playing: ${track.name} - ${track.artist}`, 'app');
     } catch (error) {
@@ -105,6 +125,40 @@ export class BluetifyApp {
         );
       },
     });
+  }
+
+  private getOriginalDescription(): string {
+    if (this.originalDescription === null) {
+      throw new Error('original bio is not initialized');
+    }
+    return this.originalDescription;
+  }
+
+  private async restoreOriginalDescription(): Promise<boolean> {
+    if (this.lastWrittenDescription === null || this.originalDescription === null) {
+      return false;
+    }
+
+    const result = await this.profile.updateDescription(
+      this.originalDescription,
+      this.lastWrittenDescription,
+    );
+    if (result.status === 'conflict') {
+      this.suspendWrites(result.description);
+      return false;
+    }
+
+    this.lastWrittenDescription = null;
+    return true;
+  }
+
+  private suspendWrites(currentDescription: string): void {
+    this.writesSuspended = true;
+    this.lastWrittenDescription = null;
+    logger.warn(
+      `bio changed outside bluetify; writes suspended until restart (current length: ${currentDescription.length})`,
+      'app',
+    );
   }
 }
 
