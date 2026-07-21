@@ -31,7 +31,7 @@ export function parseJsonOrNull<T>(rawBody: string): T | null {
 export async function fetchWithTimeout(
   requestLabel: string,
   timeoutMs: number,
-  input: string | URL,
+  input: Parameters<typeof fetch>[0],
   init: RequestInit = {},
 ): Promise<Response> {
   const timeoutController = new AbortController();

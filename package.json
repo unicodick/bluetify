@@ -9,7 +9,9 @@
     "start": "node --env-file=.env dist/index.js",
     "dev": "tsx watch --env-file=.env src/index.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@atproto/api": "^0.20.30"
+  },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "tsx": "^4.19.4",
