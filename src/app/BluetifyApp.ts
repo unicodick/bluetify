@@ -1,8 +1,10 @@
 import { Config } from '../config/index.js';
 import {
-  RequestTimeoutError,
-  TIMEOUT_RETRY_ATTEMPTS,
-  TIMEOUT_RETRY_BACKOFF_MS,
+  REQUEST_RETRY_ATTEMPTS,
+  REQUEST_RETRY_BACKOFF_MS,
+  SHUTDOWN_DEADLINE_MS,
+  getRetryDelayMs,
+  isTransientError,
   logger,
   retry,
   truncateBlueskyDescription,
@@ -24,16 +26,19 @@ export class BluetifyApp {
   ) {}
 
   private timeoutId: NodeJS.Timeout | null = null;
-  private lastTrackId: string | null = null;
+  private lastTrackId: string | null | undefined;
   private isShuttingDown = false;
   private originalDescription: string | null = null;
   private lastWrittenDescription: string | null = null;
   private pendingDescription: string | null = null;
   private accountDid: string | null = null;
   private writesSuspended = false;
+  private readonly lifecycleController = new AbortController();
+  private activeTick: Promise<void> | null = null;
+  private shutdownPromise: Promise<void> | null = null;
 
   async initialize(): Promise<void> {
-    const snapshot = await this.profile.initialize();
+    const snapshot = await this.profile.initialize(this.lifecycleController.signal);
     const recovered = await this.recoverState(snapshot);
     this.accountDid = snapshot.accountDid;
     this.originalDescription = recovered.originalDescription;
@@ -49,21 +54,38 @@ export class BluetifyApp {
   }
 
   async start(): Promise<void> {
-    await this.tick();
+    await this.runTick();
     this.scheduleNextTick();
     logger.info(`polling every ${this.config.updateIntervalMs / 1000}s`, 'app');
   }
 
-  async shutdown(): Promise<void> {
+  shutdown(): Promise<void> {
+    this.shutdownPromise ??= this.performShutdown();
+    return this.shutdownPromise;
+  }
+
+  private async performShutdown(): Promise<void> {
     this.isShuttingDown = true;
+    this.lifecycleController.abort();
 
     if (this.timeoutId) {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
     }
 
-    const restored = await this.restoreOriginalDescription();
-    logger.info(restored ? 'bio restored. bye.' : 'shutdown complete. bye.', 'app');
+    await this.activeTick;
+
+    const shutdownController = new AbortController();
+    const deadlineId = setTimeout(
+      () => shutdownController.abort(new Error('shutdown deadline exceeded')),
+      SHUTDOWN_DEADLINE_MS,
+    );
+    try {
+      const restored = await this.restoreOriginalDescription(shutdownController.signal);
+      logger.info(restored ? 'bio restored. bye.' : 'shutdown complete. bye.', 'app');
+    } finally {
+      clearTimeout(deadlineId);
+    }
   }
 
   private async tick(): Promise<void> {
@@ -71,15 +93,11 @@ export class BluetifyApp {
 
     try {
       const track = await this.runWithTimeoutRetry('last.fm user.getrecenttracks', () =>
-        getNowPlaying(this.config)
+        getNowPlaying(this.config, this.lifecycleController.signal)
       );
       const trackId = getTrackId(track);
 
-      if (
-        trackId === this.lastTrackId &&
-        this.lastWrittenDescription === null &&
-        this.pendingDescription === null
-      ) return;
+      if (trackId === this.lastTrackId) return;
 
       if (this.writesSuspended) {
         this.lastTrackId = trackId;
@@ -89,7 +107,7 @@ export class BluetifyApp {
       if (!track) {
         const restored = await this.runWithTimeoutRetry(
           'bsky restore description',
-          () => this.restoreOriginalDescription(),
+          () => this.restoreOriginalDescription(this.lifecycleController.signal),
         );
         this.lastTrackId = null;
         if (restored) {
@@ -101,7 +119,7 @@ export class BluetifyApp {
       const bio = formatBio(track);
       const updated = await this.runWithTimeoutRetry(
         'bsky update description',
-        () => this.writeManagedDescription(bio),
+        () => this.writeManagedDescription(bio, this.lifecycleController.signal),
       );
       if (!updated) {
         this.lastTrackId = trackId;
@@ -111,6 +129,7 @@ export class BluetifyApp {
       this.lastTrackId = trackId;
       logger.info(`now playing: ${track.name} - ${track.artist}`, 'app');
     } catch (error) {
+      if (this.lifecycleController.signal.aborted) return;
       logger.error('tick error:', error, 'app');
     }
   }
@@ -125,9 +144,21 @@ export class BluetifyApp {
 
   private async runScheduledTick(): Promise<void> {
     try {
-      await this.tick();
+      await this.runTick();
     } finally {
       this.scheduleNextTick();
+    }
+  }
+
+  private async runTick(): Promise<void> {
+    const tickPromise = this.tick();
+    this.activeTick = tickPromise;
+    try {
+      await tickPromise;
+    } finally {
+      if (this.activeTick === tickPromise) {
+        this.activeTick = null;
+      }
     }
   }
 
@@ -136,12 +167,15 @@ export class BluetifyApp {
     operation: () => Promise<T>,
   ): Promise<T> {
     return retry(operation, {
-      attempts: TIMEOUT_RETRY_ATTEMPTS,
-      baseDelayMs: TIMEOUT_RETRY_BACKOFF_MS,
-      shouldRetry: (error) => error instanceof RequestTimeoutError,
+      attempts: REQUEST_RETRY_ATTEMPTS,
+      baseDelayMs: REQUEST_RETRY_BACKOFF_MS,
+      shouldRetry: isTransientError,
+      getDelayMs: (error, attempt) =>
+        getRetryDelayMs(error, attempt, REQUEST_RETRY_BACKOFF_MS),
+      signal: this.lifecycleController.signal,
       onRetry: (_error, attempt, delayMs) => {
         logger.warn(
-          `${operationLabel} timeout (attempt ${attempt}/${TIMEOUT_RETRY_ATTEMPTS}), retrying in ${delayMs}ms`,
+          `${operationLabel} failed transiently (attempt ${attempt}/${REQUEST_RETRY_ATTEMPTS}), retrying in ${delayMs}ms`,
           'app',
         );
       },
@@ -155,7 +189,7 @@ export class BluetifyApp {
     return this.originalDescription;
   }
 
-  private async restoreOriginalDescription(): Promise<boolean> {
+  private async restoreOriginalDescription(signal?: AbortSignal): Promise<boolean> {
     if (this.originalDescription === null || this.accountDid === null) {
       return false;
     }
@@ -164,6 +198,7 @@ export class BluetifyApp {
       const pendingResult = await this.profile.updateDescription(
         this.originalDescription,
         this.pendingDescription,
+        signal,
       );
       if (pendingResult.status === 'updated' || pendingResult.description === this.originalDescription) {
         await this.clearState();
@@ -188,6 +223,7 @@ export class BluetifyApp {
     const result = await this.profile.updateDescription(
       this.originalDescription,
       this.lastWrittenDescription,
+      signal,
     );
     if (result.status === 'conflict') {
       if (result.description === this.originalDescription) {
@@ -202,12 +238,15 @@ export class BluetifyApp {
     return true;
   }
 
-  private async writeManagedDescription(description: string): Promise<boolean> {
+  private async writeManagedDescription(
+    description: string,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
     const expected = this.lastWrittenDescription ?? this.getOriginalDescription();
     this.pendingDescription = description;
     await this.persistState();
 
-    const result = await this.profile.updateDescription(description, expected);
+    const result = await this.profile.updateDescription(description, expected, signal);
     if (result.status === 'conflict' && result.description !== description) {
       await this.suspendWrites(result.description);
       return false;

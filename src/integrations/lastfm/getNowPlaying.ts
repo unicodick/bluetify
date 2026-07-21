@@ -2,7 +2,9 @@ import { Config } from '../../config/index.js';
 import {
   HTTP_ERROR_BODY_PREVIEW_MAX_LENGTH,
   HTTP_REQUEST_TIMEOUT_MS,
+  HttpResponseError,
   fetchWithTimeout,
+  parseRetryAfter,
   parseJsonOrNull,
 } from '../../core/index.js';
 import { Track } from '../../domain/index.js';
@@ -40,7 +42,10 @@ function mapNowPlaying(response: LastFmResponse): Track | null {
   };
 }
 
-export async function getNowPlaying(config: Config): Promise<Track | null> {
+export async function getNowPlaying(
+  config: Config,
+  signal?: AbortSignal,
+): Promise<Track | null> {
   const params = new URLSearchParams({
     method: 'user.getrecenttracks',
     user: config.lastfm.username,
@@ -53,13 +58,16 @@ export async function getNowPlaying(config: Config): Promise<Track | null> {
     'last.fm user.getrecenttracks',
     HTTP_REQUEST_TIMEOUT_MS,
     `${LASTFM_API_URL}?${params}`,
+    { signal },
   );
   const rawBody = await response.text();
 
   if (!response.ok) {
     const fallbackBody = rawBody.trim().slice(0, HTTP_ERROR_BODY_PREVIEW_MAX_LENGTH) || '<empty body>';
-    throw new Error(
+    throw new HttpResponseError(
       `last.fm request failed: ${response.status} ${response.statusText}. body: ${fallbackBody}`,
+      response.status,
+      parseRetryAfter(response.headers.get('retry-after')),
     );
   }
 

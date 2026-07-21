@@ -3,6 +3,8 @@ export interface RetryOptions {
   baseDelayMs: number;
   shouldRetry: (error: unknown, attempt: number) => boolean;
   onRetry?: (error: unknown, attempt: number, delayMs: number) => void;
+  getDelayMs?: (error: unknown, attempt: number) => number;
+  signal?: AbortSignal;
 }
 
 export async function retry<T>(
@@ -19,9 +21,9 @@ export async function retry<T>(
         throw error;
       }
 
-      const delayMs = options.baseDelayMs * attempt;
+      const delayMs = options.getDelayMs?.(error, attempt) ?? options.baseDelayMs * attempt;
       options.onRetry?.(error, attempt, delayMs);
-      await sleep(delayMs);
+      await sleep(delayMs, options.signal);
       attempt += 1;
     }
   }
@@ -29,8 +31,17 @@ export async function retry<T>(
   throw new Error('operation failed after retries');
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    setTimeout(resolve, ms);
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+    const onAbort = (): void => {
+      clearTimeout(timeoutId);
+      reject(signal?.reason);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }

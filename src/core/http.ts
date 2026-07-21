@@ -8,13 +8,25 @@ export class RequestTimeoutError extends Error {
   }
 }
 
-function isAbortError(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'name' in error &&
-    error.name === 'AbortError'
-  );
+export class NetworkRequestError extends Error {
+  constructor(
+    public readonly requestLabel: string,
+    options?: ErrorOptions,
+  ) {
+    super(`${requestLabel} failed due to a network error`, options);
+    this.name = 'NetworkRequestError';
+  }
+}
+
+export class HttpResponseError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly retryAfterMs?: number,
+  ) {
+    super(message);
+    this.name = 'HttpResponseError';
+  }
 }
 
 export function parseJsonOrNull<T>(rawBody: string): T | null {
@@ -46,8 +58,35 @@ export async function fetchWithTimeout(
     if (isAbortError(error) && timeoutController.signal.aborted) {
       throw new RequestTimeoutError(requestLabel, timeoutMs);
     }
+    if (error instanceof TypeError) {
+      throw new NetworkRequestError(requestLabel, { cause: error });
+    }
     throw error;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export function parseRetryAfter(value: string | null): number | undefined {
+  if (!value) return undefined;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds) && seconds >= 0) {
+    return Math.ceil(seconds * 1000);
+  }
+
+  const date = Date.parse(value);
+  if (!Number.isNaN(date)) {
+    return Math.max(0, date - Date.now());
+  }
+  return undefined;
+}
+
+export function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'AbortError'
+  );
 }
