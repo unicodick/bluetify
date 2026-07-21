@@ -6,6 +6,8 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
+    "typecheck": "tsc --noEmit -p tsconfig.test.json",
+    "test": "npm run typecheck && tsx --test test/*.test.ts",
     "start": "node --env-file=.env dist/index.js",
     "dev": "tsx watch --env-file=.env src/index.ts"
   },
