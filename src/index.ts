@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { BluetifyApp } from './app/index.js';
 import { loadConfig } from './config/index.js';
 import { logger } from './core/index.js';

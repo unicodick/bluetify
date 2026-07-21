@@ -8,8 +8,15 @@
     "node": ">=22"
   },
   "packageManager": "npm@11.16.0",
+  "bin": {
+    "bluetify": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsc",
+    "prepack": "npm run build",
     "typecheck": "tsc --noEmit -p tsconfig.test.json",
     "test": "npm run typecheck && tsx --test test/*.test.ts",
     "start": "node --env-file=.env dist/index.js",
