@@ -23,6 +23,7 @@ export class BluetifyApp {
     private readonly config: Config,
     private readonly profile: ProfileService,
     private readonly stateStore: BioStateStore,
+    private readonly nowPlaying: typeof getNowPlaying = getNowPlaying,
   ) {}
 
   private timeoutId: NodeJS.Timeout | null = null;
@@ -93,7 +94,7 @@ export class BluetifyApp {
 
     try {
       const track = await this.runWithTimeoutRetry('last.fm user.getrecenttracks', () =>
-        getNowPlaying(this.config, this.lifecycleController.signal)
+        this.nowPlaying(this.config, this.lifecycleController.signal)
       );
       const trackId = getTrackId(track);
 
@@ -328,7 +329,7 @@ function createState(accountDid: string, originalDescription: string): ManagedBi
 }
 
 function getTrackId(track: Track | null): string | null {
-  return track ? `${track.artist}|${track.name}` : null;
+  return track ? JSON.stringify([track.artist, track.name]) : null;
 }
 
 function formatBio(track: Track): string {
