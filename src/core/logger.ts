@@ -1,7 +1,8 @@
 const APP_PREFIX = '[bluetify]';
 
 function formatScope(scope?: string): string {
-  return scope ? `${APP_PREFIX} [${scope}]` : APP_PREFIX;
+  const prefix = scope ? `${APP_PREFIX} [${scope}]` : APP_PREFIX;
+  return `${new Date().toISOString()} ${prefix}`;
 }
 
 export const logger = {
@@ -17,7 +18,9 @@ export const logger = {
       return;
     }
 
-    const normalized = details instanceof Error ? details.message : details;
+    const normalized = details instanceof Error
+      ? details.stack ?? details.message
+      : details;
     console.error(`${formatScope(scope)} ${message}`, normalized);
   },
 };
