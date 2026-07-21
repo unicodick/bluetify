@@ -2,6 +2,7 @@ import { BluetifyApp } from './app/index.js';
 import { loadConfig } from './config/index.js';
 import { logger } from './core/index.js';
 import { BlueskyService } from './integrations/bluesky/index.js';
+import { FileBioStateStore } from './state/index.js';
 
 let app: BluetifyApp | null = null;
 
@@ -23,7 +24,11 @@ process.on('SIGTERM', () => void shutdown());
 
 try {
   const config = loadConfig();
-  app = new BluetifyApp(config, new BlueskyService(config));
+  app = new BluetifyApp(
+    config,
+    new BlueskyService(config),
+    new FileBioStateStore(config.stateFile),
+  );
   await app.initialize();
   await app.start();
 } catch (error) {

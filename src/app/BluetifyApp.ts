@@ -8,12 +8,19 @@ import {
   truncateBlueskyDescription,
 } from '../core/index.js';
 import { getNowPlaying } from '../integrations/lastfm/index.js';
-import { ProfileService, Track } from '../domain/index.js';
+import {
+  BioStateStore,
+  ManagedBioState,
+  ProfileService,
+  ProfileSnapshot,
+  Track,
+} from '../domain/index.js';
 
 export class BluetifyApp {
   constructor(
     private readonly config: Config,
     private readonly profile: ProfileService,
+    private readonly stateStore: BioStateStore,
   ) {}
 
   private timeoutId: NodeJS.Timeout | null = null;
@@ -21,12 +28,24 @@ export class BluetifyApp {
   private isShuttingDown = false;
   private originalDescription: string | null = null;
   private lastWrittenDescription: string | null = null;
+  private pendingDescription: string | null = null;
+  private accountDid: string | null = null;
   private writesSuspended = false;
 
   async initialize(): Promise<void> {
     const snapshot = await this.profile.initialize();
-    this.originalDescription = snapshot.description;
-    logger.info('init. original bio saved.', 'app');
+    const recovered = await this.recoverState(snapshot);
+    this.accountDid = snapshot.accountDid;
+    this.originalDescription = recovered.originalDescription;
+    this.lastWrittenDescription = recovered.lastWrittenDescription;
+    this.pendingDescription = null;
+    await this.persistState();
+    logger.info(
+      recovered.lastWrittenDescription === null
+        ? 'init. original bio saved.'
+        : 'init. managed bio recovered.',
+      'app',
+    );
   }
 
   async start(): Promise<void> {
@@ -56,7 +75,11 @@ export class BluetifyApp {
       );
       const trackId = getTrackId(track);
 
-      if (trackId === this.lastTrackId) return;
+      if (
+        trackId === this.lastTrackId &&
+        this.lastWrittenDescription === null &&
+        this.pendingDescription === null
+      ) return;
 
       if (this.writesSuspended) {
         this.lastTrackId = trackId;
@@ -76,18 +99,15 @@ export class BluetifyApp {
       }
 
       const bio = formatBio(track);
-      const expected = this.lastWrittenDescription ?? this.getOriginalDescription();
-      const result = await this.runWithTimeoutRetry(
+      const updated = await this.runWithTimeoutRetry(
         'bsky update description',
-        () => this.profile.updateDescription(bio, expected),
+        () => this.writeManagedDescription(bio),
       );
-      if (result.status === 'conflict') {
-        this.suspendWrites(result.description);
+      if (!updated) {
         this.lastTrackId = trackId;
         return;
       }
 
-      this.lastWrittenDescription = result.description;
       this.lastTrackId = trackId;
       logger.info(`now playing: ${track.name} - ${track.artist}`, 'app');
     } catch (error) {
@@ -136,7 +156,32 @@ export class BluetifyApp {
   }
 
   private async restoreOriginalDescription(): Promise<boolean> {
-    if (this.lastWrittenDescription === null || this.originalDescription === null) {
+    if (this.originalDescription === null || this.accountDid === null) {
+      return false;
+    }
+
+    if (this.pendingDescription !== null) {
+      const pendingResult = await this.profile.updateDescription(
+        this.originalDescription,
+        this.pendingDescription,
+      );
+      if (pendingResult.status === 'updated' || pendingResult.description === this.originalDescription) {
+        await this.clearState();
+        return true;
+      }
+
+      const previousDescription = this.lastWrittenDescription ?? this.originalDescription;
+      if (pendingResult.description !== previousDescription) {
+        await this.suspendWrites(pendingResult.description);
+        return false;
+      }
+
+      this.pendingDescription = null;
+      await this.persistState();
+    }
+
+    if (this.lastWrittenDescription === null) {
+      await this.clearState();
       return false;
     }
 
@@ -145,22 +190,102 @@ export class BluetifyApp {
       this.lastWrittenDescription,
     );
     if (result.status === 'conflict') {
-      this.suspendWrites(result.description);
+      if (result.description === this.originalDescription) {
+        await this.clearState();
+        return true;
+      }
+      await this.suspendWrites(result.description);
       return false;
     }
 
-    this.lastWrittenDescription = null;
+    await this.clearState();
     return true;
   }
 
-  private suspendWrites(currentDescription: string): void {
-    this.writesSuspended = true;
+  private async writeManagedDescription(description: string): Promise<boolean> {
+    const expected = this.lastWrittenDescription ?? this.getOriginalDescription();
+    this.pendingDescription = description;
+    await this.persistState();
+
+    const result = await this.profile.updateDescription(description, expected);
+    if (result.status === 'conflict' && result.description !== description) {
+      await this.suspendWrites(result.description);
+      return false;
+    }
+
+    this.lastWrittenDescription = description;
+    this.pendingDescription = null;
+    await this.persistState();
+    return true;
+  }
+
+  private async recoverState(snapshot: ProfileSnapshot): Promise<ManagedBioState> {
+    const saved = await this.stateStore.load();
+    if (!saved || saved.accountDid !== snapshot.accountDid) {
+      return createState(snapshot.accountDid, snapshot.description);
+    }
+
+    const previousDescription = saved.lastWrittenDescription ?? saved.originalDescription;
+    if (saved.pendingDescription !== null) {
+      if (snapshot.description === saved.pendingDescription) {
+        return {
+          ...saved,
+          lastWrittenDescription: saved.pendingDescription,
+          pendingDescription: null,
+        };
+      }
+      if (snapshot.description !== previousDescription) {
+        return createState(snapshot.accountDid, snapshot.description);
+      }
+    }
+
+    if (
+      saved.lastWrittenDescription !== null &&
+      snapshot.description === saved.lastWrittenDescription
+    ) {
+      return { ...saved, pendingDescription: null };
+    }
+
+    return createState(snapshot.accountDid, snapshot.description);
+  }
+
+  private async persistState(): Promise<void> {
+    if (this.accountDid === null || this.originalDescription === null) {
+      throw new Error('managed bio state is not initialized');
+    }
+    await this.stateStore.save({
+      version: 1,
+      accountDid: this.accountDid,
+      originalDescription: this.originalDescription,
+      lastWrittenDescription: this.lastWrittenDescription,
+      pendingDescription: this.pendingDescription,
+    });
+  }
+
+  private async clearState(): Promise<void> {
+    await this.stateStore.clear();
     this.lastWrittenDescription = null;
+    this.pendingDescription = null;
+  }
+
+  private async suspendWrites(currentDescription: string): Promise<void> {
+    this.writesSuspended = true;
+    await this.clearState();
     logger.warn(
       `bio changed outside bluetify; writes suspended until restart (current length: ${currentDescription.length})`,
       'app',
     );
   }
+}
+
+function createState(accountDid: string, originalDescription: string): ManagedBioState {
+  return {
+    version: 1,
+    accountDid,
+    originalDescription,
+    lastWrittenDescription: null,
+    pendingDescription: null,
+  };
 }
 
 function getTrackId(track: Track | null): string | null {

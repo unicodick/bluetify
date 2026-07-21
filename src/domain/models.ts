@@ -4,6 +4,7 @@ export interface Track {
 }
 
 export interface ProfileSnapshot {
+  accountDid: string;
   description: string;
 }
 
@@ -18,4 +19,18 @@ export interface ProfileService {
     expectedDescription: string,
     signal?: AbortSignal,
   ): Promise<ProfileUpdateResult>;
+}
+
+export interface ManagedBioState {
+  version: 1;
+  accountDid: string;
+  originalDescription: string;
+  lastWrittenDescription: string | null;
+  pendingDescription: string | null;
+}
+
+export interface BioStateStore {
+  load(): Promise<ManagedBioState | null>;
+  save(state: ManagedBioState): Promise<void>;
+  clear(): Promise<void>;
 }

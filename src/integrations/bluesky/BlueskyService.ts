@@ -48,7 +48,10 @@ export class BlueskyService implements ProfileService {
 
     this.agent = new Agent(session);
     const profile = await this.fetchProfile(signal);
-    return { description: profile.value.description ?? '' };
+    return {
+      accountDid: this.getAgent().assertDid,
+      description: profile.value.description ?? '',
+    };
   }
 
   async updateDescription(

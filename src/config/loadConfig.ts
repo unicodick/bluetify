@@ -2,6 +2,7 @@ import { Config } from './types.js';
 
 const DEFAULT_UPDATE_INTERVAL_SECONDS = 30;
 const MIN_UPDATE_INTERVAL_SECONDS = 10;
+const DEFAULT_STATE_FILE = '.bluetify-state.json';
 
 function requireEnv(env: NodeJS.ProcessEnv, name: string): string {
   const value = env[name]?.trim();
@@ -34,6 +35,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       apiKey: requireEnv(env, 'LASTFM_API_KEY'),
       username: requireEnv(env, 'LASTFM_USERNAME'),
     },
+    stateFile: env.BLUETIFY_STATE_FILE?.trim() || DEFAULT_STATE_FILE,
     updateIntervalMs: parseUpdateInterval(env.UPDATE_INTERVAL),
   };
 }

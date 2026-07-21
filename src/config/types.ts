@@ -7,5 +7,6 @@ export interface Config {
     apiKey: string;
     username: string;
   };
+  stateFile: string;
   updateIntervalMs: number;
 }

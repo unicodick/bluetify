@@ -1,4 +1,6 @@
 export type {
+  BioStateStore,
+  ManagedBioState,
   ProfileService,
   ProfileSnapshot,
   ProfileUpdateResult,
