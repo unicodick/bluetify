@@ -8,14 +8,16 @@ let app: BluetifyApp | null = null;
 
 async function shutdown(): Promise<void> {
   if (!app) {
-    process.exit(0);
+    process.exitCode = 0;
+    return;
   }
 
   try {
     await app.shutdown();
-    process.exit(0);
-  } catch {
-    process.exit(1);
+    process.exitCode = 0;
+  } catch (error) {
+    logger.error('shutdown failed:', error, 'bootstrap');
+    process.exitCode = 1;
   }
 }
 
@@ -33,5 +35,5 @@ try {
   await app.start();
 } catch (error) {
   logger.error('failed to start:', error, 'bootstrap');
-  process.exit(1);
+  process.exitCode = 1;
 }
