@@ -6,7 +6,6 @@ import {
 } from '@atproto/api';
 import { Config } from '../../config/index.js';
 import {
-  BLUESKY_SERVICE_URL,
   HTTP_REQUEST_TIMEOUT_MS,
   fetchWithTimeout,
   truncateBlueskyDescription,
@@ -33,7 +32,7 @@ export class BlueskyService implements ProfileService {
 
   async initialize(signal?: AbortSignal): Promise<ProfileSnapshot> {
     const session = new CredentialSession(
-      new URL(BLUESKY_SERVICE_URL),
+      new URL(this.config.bluesky.serviceUrl),
       (input, init) => fetchWithTimeout(
         'bsky request',
         HTTP_REQUEST_TIMEOUT_MS,

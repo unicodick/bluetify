@@ -2,6 +2,7 @@ export interface Config {
   bluesky: {
     username: string;
     password: string;
+    serviceUrl: string;
   };
   lastfm: {
     apiKey: string;
